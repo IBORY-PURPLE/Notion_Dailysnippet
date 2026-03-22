@@ -10,6 +10,7 @@ const SUPPORTED_WEBHOOK_EVENTS = new Set([
   "page.created",
   "page.updated",
   "page.properties.updated",
+  "page.content_updated",
   "database.updated"
 ]);
 
