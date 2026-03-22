@@ -135,7 +135,7 @@ export async function POST(req: NextRequest) {
     const pageId = readWebhookPageId(payload);
     const meta = buildWebhookMeta(req, rawBody, eventType, pageId);
 
-    logInfo("webhook.received", meta);
+    logInfo("webhook.received", { ...meta, rawBody });
 
     if (eventType && !SUPPORTED_WEBHOOK_EVENTS.has(eventType)) {
       return NextResponse.json(
