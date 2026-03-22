@@ -65,7 +65,6 @@ function readCategoryValue(page: PageObjectResponse, propertyName: string): stri
 }
 
 function isPageResponse(response: GetPageResponse): response is PageObjectResponse {
-  // A type guard tells TypeScript this response has page properties.
   return "properties" in response;
 }
 
@@ -97,7 +96,6 @@ async function readCategoryValueAsync(page: PageObjectResponse, propertyName: st
   }
 
   if (property.type === "relation") {
-    // If the category is stored as a relation, resolve the related page titles first.
     const relationNames = await readRelationNames(property.relation.map((item) => item.id));
     return relationNames.join(",");
   }
@@ -145,7 +143,6 @@ export async function getTodayDailySnippetPages(): Promise<NotionDailyPage[]> {
   let cursor: string | undefined = undefined;
 
   do {
-    // Query in pages because the Notion API may not return everything at once.
     const query: QueryDatabaseParameters = {
       database_id: databaseId,
       filter: {
@@ -177,7 +174,6 @@ export async function getTodayDailySnippetPages(): Promise<NotionDailyPage[]> {
   );
 
   return mappedPages.filter((page) => {
-    // Normalize spacing/casing so minor formatting differences do not break filtering.
     const normalizedCategoryValue = page.categoryValue.replace(/\s+/g, "");
     return normalizedCategoryValue.includes(normalizedTargetCategory) && page.dateValue?.slice(0, 10) === today;
   });
@@ -189,7 +185,6 @@ export async function getPageBlocks(pageId: string) {
   let cursor: string | undefined = undefined;
 
   do {
-    // Page blocks are also paginated, so keep fetching until there is no next cursor.
     const result = await notion.blocks.children.list({
       block_id: pageId,
       start_cursor: cursor,
