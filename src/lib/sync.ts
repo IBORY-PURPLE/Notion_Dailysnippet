@@ -21,21 +21,20 @@ function createFailedResult(
   };
 }
 
-function isEligibleDailySnippetPage(page: NotionDailyPage, targetCategory: string, today: string): boolean {
+function isEligibleDailySnippetPage(page: NotionDailyPage, targetCategory: string): boolean {
   const normalizedCategoryValue = page.categoryValue.replace(/\s+/g, "");
   const normalizedTargetCategory = targetCategory.toLowerCase().replace(/\s+/g, "");
 
-  return normalizedCategoryValue.includes(normalizedTargetCategory) && page.dateValue?.slice(0, 10) === today;
+  return normalizedCategoryValue.includes(normalizedTargetCategory) && page.isCompleted && Boolean(page.dateValue);
 }
 
 async function syncPages(targetPages: NotionDailyPage[], emptyMessage: string): Promise<SyncSummary> {
   const config = getSyncConfig();
-  const today = getTodayDateString(config.syncTimezone);
   const dedupeTtlMs = config.syncDedupeTtlSeconds * 1000;
+  const fallbackDate = getTodayDateString(config.syncTimezone);
 
   // Log the sync start so we can trace which date/config this run used.
   logInfo("sync.start", {
-    today,
     timezone: config.syncTimezone,
     targetCategory: config.notionTargetCategory
   });
@@ -66,7 +65,7 @@ async function syncPages(targetPages: NotionDailyPage[], emptyMessage: string): 
 
   for (const page of targetPages) {
     // Normalize the date once so later result objects and dedupe keys stay consistent.
-    const normalizedDate = normalizeDateString(page.dateValue ?? today);
+    const normalizedDate = normalizeDateString(page.dateValue ?? fallbackDate);
     const baseResult = {
       notionPageId: page.id,
       title: page.title,
@@ -136,6 +135,26 @@ async function syncPages(targetPages: NotionDailyPage[], emptyMessage: string): 
       const response = await sendToDailySnippet(validation.payload, {
         idempotencyKey
       });
+
+      if (response.date !== normalizedDate) {
+        releaseIdempotencyKey(idempotencyKey);
+
+        const skippedResult: SyncResult = {
+          ...baseResult,
+          status: "skipped",
+          message: `Snippet API response date mismatch: expected ${normalizedDate}, received ${response.date ?? "unknown"}`,
+          apiStatus: response.status
+        };
+
+        results.push(skippedResult);
+        logInfo("sync.page.response_date_mismatch", {
+          ...skippedResult,
+          idempotencyKey,
+          responseDate: response.date
+        });
+        continue;
+      }
+
       const successResult: SyncResult = {
         ...baseResult,
         status: "synced",
@@ -191,12 +210,11 @@ async function syncPages(targetPages: NotionDailyPage[], emptyMessage: string): 
 export async function runDailySnippetSync(): Promise<SyncSummary> {
   const pages = await getTodayDailySnippetPages();
 
-  return syncPages(pages, "No page matched today's daily_snippet condition");
+  return syncPages(pages, "No completed daily_snippet page matched the sync condition");
 }
 
 export async function syncNotionPageById(pageId: string): Promise<SyncSummary> {
   const config = getSyncConfig();
-  const today = getTodayDateString(config.syncTimezone);
   const page = await getNotionPageById(pageId);
 
   if (!page) {
@@ -210,7 +228,7 @@ export async function syncNotionPageById(pageId: string): Promise<SyncSummary> {
         {
           notionPageId: pageId,
           title: "Unknown",
-          date: today,
+          date: getTodayDateString(config.syncTimezone),
           category: config.notionTargetCategory,
           status: "failed",
           reason: "MARKDOWN_CONVERSION_FAILED",
@@ -220,10 +238,10 @@ export async function syncNotionPageById(pageId: string): Promise<SyncSummary> {
     };
   }
 
-  if (!isEligibleDailySnippetPage(page, config.notionTargetCategory, today)) {
+  if (!isEligibleDailySnippetPage(page, config.notionTargetCategory)) {
     return {
       ok: true,
-      message: "Webhook page did not match today's daily_snippet condition",
+      message: "Webhook page did not match the completed daily_snippet condition",
       syncedCount: 0,
       failedCount: 0,
       skippedCount: 1,
@@ -231,10 +249,10 @@ export async function syncNotionPageById(pageId: string): Promise<SyncSummary> {
         {
           notionPageId: page.id,
           title: page.title,
-          date: normalizeDateString(page.dateValue ?? today),
+          date: normalizeDateString(page.dateValue ?? getTodayDateString(config.syncTimezone)),
           category: config.notionTargetCategory,
           status: "skipped",
-          message: "Webhook page did not match today's daily_snippet condition",
+          message: "Webhook page did not match the completed daily_snippet condition",
           apiStatus: 202
         }
       ]

@@ -3,6 +3,7 @@ export type SyncConfig = {
   notionDatabaseId: string | undefined;
   notionCategoryProperty: string;
   notionDateProperty: string;
+  notionCompletedProperty: string;
   notionTargetCategory: string;
   notionWebhookSecret: string | undefined;
   syncTimezone: string;
@@ -29,6 +30,7 @@ export function getSyncConfig(): SyncConfig {
     notionDatabaseId: process.env.NOTION_DATABASE_ID,
     notionCategoryProperty: process.env.NOTION_CATEGORY_PROPERTY ?? "category",
     notionDateProperty: process.env.NOTION_DATE_PROPERTY ?? "date",
+    notionCompletedProperty: process.env.NOTION_COMPLETED_PROPERTY ?? "완료",
     notionTargetCategory: process.env.NOTION_TARGET_CATEGORY ?? "daily_snippet",
     notionWebhookSecret: process.env.NOTION_WEBHOOK_SECRET,
     syncTimezone: process.env.SYNC_TIMEZONE ?? "Asia/Seoul",

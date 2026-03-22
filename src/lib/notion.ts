@@ -2,18 +2,22 @@ import { Client } from "@notionhq/client";
 import type {
   GetPageResponse,
   PageObjectResponse,
-  QueryDatabaseParameters,
   QueryDatabaseResponse
 } from "@notionhq/client/build/src/api-endpoints";
-import { getSyncConfig, getTodayDateString, requireConfigValue } from "@/lib/config";
+import { getSyncConfig, requireConfigValue } from "@/lib/config";
 
 type NotionDailyPage = {
   id: string;
   title: string;
   categoryValue: string;
   dateValue?: string;
+  isCompleted: boolean;
   raw: PageObjectResponse;
 };
+
+const DATE_PROPERTY_FALLBACKS = ["진행날짜", "date"];
+const COMPLETED_PROPERTY_FALLBACKS = ["완료", "done", "completed"];
+const CATEGORY_PROPERTY_FALLBACKS = ["category", "카테고리"];
 
 let notionClient: Client | undefined;
 
@@ -44,7 +48,7 @@ function readTitle(page: PageObjectResponse): string {
 }
 
 function readCategoryValue(page: PageObjectResponse, propertyName: string): string {
-  const property = page.properties[propertyName];
+  const property = findProperty(page, propertyName, CATEGORY_PROPERTY_FALLBACKS);
   if (!property) {
     return "";
   }
@@ -90,7 +94,7 @@ async function readRelationNames(relationIds: string[]): Promise<string[]> {
 }
 
 async function readCategoryValueAsync(page: PageObjectResponse, propertyName: string): Promise<string> {
-  const property = page.properties[propertyName];
+  const property = findProperty(page, propertyName, CATEGORY_PROPERTY_FALLBACKS);
   if (!property) {
     return "";
   }
@@ -104,13 +108,35 @@ async function readCategoryValueAsync(page: PageObjectResponse, propertyName: st
 }
 
 function readDateValue(page: PageObjectResponse, propertyName: string): string | undefined {
-  const property = page.properties[propertyName];
+  const property = findProperty(page, propertyName, DATE_PROPERTY_FALLBACKS);
   if (!property) {
     return undefined;
   }
 
   if (property.type === "date") {
     return property.date?.start;
+  }
+
+  return undefined;
+}
+
+function readCheckboxValue(page: PageObjectResponse, propertyName: string): boolean {
+  const property = findProperty(page, propertyName, COMPLETED_PROPERTY_FALLBACKS);
+  return property?.type === "checkbox" ? property.checkbox : false;
+}
+
+function findProperty(
+  page: PageObjectResponse,
+  propertyName: string,
+  fallbacks: string[]
+) {
+  const candidateNames = [propertyName, ...fallbacks];
+
+  for (const candidateName of candidateNames) {
+    const property = page.properties[candidateName];
+    if (property) {
+      return property;
+    }
   }
 
   return undefined;
@@ -124,12 +150,14 @@ async function mapNotionDailyPage(page: PageObjectResponse): Promise<NotionDaily
   const config = getSyncConfig();
   const categoryValue = (await readCategoryValueAsync(page, config.notionCategoryProperty)).toLowerCase();
   const dateValue = readDateValue(page, config.notionDateProperty);
+  const isCompleted = readCheckboxValue(page, config.notionCompletedProperty);
 
   return {
     id: page.id,
     title: readTitle(page),
     categoryValue,
     dateValue,
+    isCompleted,
     raw: page
   };
 }
@@ -137,31 +165,22 @@ async function mapNotionDailyPage(page: PageObjectResponse): Promise<NotionDaily
 export async function getTodayDailySnippetPages(): Promise<NotionDailyPage[]> {
   const config = getSyncConfig();
   const notion = getNotionClient();
-  const today = getTodayDateString(config.syncTimezone);
   const databaseId = getNotionDatabaseId();
   const pages: PageObjectResponse[] = [];
   let cursor: string | undefined = undefined;
 
   do {
-    const query: QueryDatabaseParameters = {
+    const response = await notion.databases.query({
       database_id: databaseId,
-      filter: {
-        property: config.notionDateProperty,
-        date: {
-          equals: today
-        }
-      },
       sorts: [
         {
-          property: config.notionDateProperty,
-          direction: "ascending"
+          timestamp: "last_edited_time",
+          direction: "descending"
         }
       ],
       page_size: 100,
       start_cursor: cursor
-    };
-
-    const response = await notion.databases.query(query);
+    });
 
     pages.push(...response.results.filter(isPageObject));
     cursor = response.has_more ? response.next_cursor ?? undefined : undefined;
@@ -175,7 +194,7 @@ export async function getTodayDailySnippetPages(): Promise<NotionDailyPage[]> {
 
   return mappedPages.filter((page) => {
     const normalizedCategoryValue = page.categoryValue.replace(/\s+/g, "");
-    return normalizedCategoryValue.includes(normalizedTargetCategory) && page.dateValue?.slice(0, 10) === today;
+    return normalizedCategoryValue.includes(normalizedTargetCategory) && page.isCompleted && Boolean(page.dateValue);
   });
 }
 

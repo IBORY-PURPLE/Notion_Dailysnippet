@@ -12,6 +12,7 @@ type DailySnippetResponse = {
   status: number;
   contentType: string;
   body: unknown;
+  date?: string;
 };
 
 type SendToDailySnippetOptions = {
@@ -68,6 +69,15 @@ export function validateDailySnippetPayload(payload: unknown): PayloadValidation
   };
 }
 
+function readResponseDate(body: unknown): string | undefined {
+  if (!body || typeof body !== "object") {
+    return undefined;
+  }
+
+  const record = body as Record<string, unknown>;
+  return typeof record.date === "string" ? record.date.slice(0, 10) : undefined;
+}
+
 function getApiConfig() {
   const config = getSyncConfig();
 
@@ -119,7 +129,8 @@ export async function sendToDailySnippet(
   return {
     status: response.status,
     contentType,
-    body
+    body,
+    date: readResponseDate(body)
   };
 }
 
