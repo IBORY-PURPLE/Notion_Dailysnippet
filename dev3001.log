@@ -1,0 +1,10 @@
+
+> notion-to-daily-snippet@0.1.0 dev
+> next dev
+
+Error: spawn EPERM
+    at new Promise (<anonymous>) {
+  errno: -4048,
+  code: 'EPERM',
+  syscall: 'spawn'
+}
